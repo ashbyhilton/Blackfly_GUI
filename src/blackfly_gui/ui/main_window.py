@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtCore import QSettings, Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QFileDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -18,6 +20,8 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from ..analysis.reference import MODES
+from ..snapshot import default_path, save_snapshot
 from ..camera import CameraBackend, CameraError, DeviceInfo, Frame, discover
 from ..camera.controller import CameraController
 from .analysis import AnalysisDock
@@ -28,6 +32,22 @@ from .panels.features import FeaturesPanel
 from .panels.format import FormatPanel
 from .panels.trigger import TriggerPanel
 from .panels.usersets import UserSetsPanel
+
+
+HELP_HTML = """<h3>Blackfly GUI {version}</h3>
+<p>Open-source GUI for Teledyne FLIR Spinnaker cameras.</p>
+<table>
+<tr><td><b>Space</b></td><td>start / stop acquisition</td></tr>
+<tr><td><b>T</b></td><td>software trigger (TriggerMode On, Source Software)</td></tr>
+<tr><td><b>Ctrl+S</b></td><td>snapshot to the snapshot folder</td></tr>
+<tr><td><b>Ctrl+Shift+S</b></td><td>snapshot, choose file name</td></tr>
+<tr><td><b>Double-click image</b></td><td>fit image to window</td></tr>
+<tr><td><b>Mouse wheel / drag</b></td><td>zoom / pan the image</td></tr>
+</table>
+<p>Greyed-out controls show <i>why</i> in their tooltip. Most "locked" camera features are
+handled automatically (auto modes switched off, acquisition paused briefly for ROI/binning).</p>
+<p>Snapshots: raw camera data as lossless TIFF plus a JSON file with every camera setting.</p>
+"""
 
 
 class MainWindow(QMainWindow):
@@ -43,9 +63,11 @@ class MainWindow(QMainWindow):
         self._devices: list[tuple[DeviceInfo, Callable[[], CameraBackend]]] = []
         self._docks: list[QDockWidget] = []
 
+        self._last_display = None
         self._build_toolbar()
         self._build_statusbar()
         self._build_panels()
+        self._restore_layout()
 
         c = self.controller
         c.frame_ready.connect(self._on_frame)
@@ -99,6 +121,28 @@ class MainWindow(QMainWindow):
         self.act_stream.setToolTip("Start / stop live acquisition (Space)")
         self.act_stream.triggered.connect(self._toggle_stream)
         tb.addAction(self.act_stream)
+        tb.addSeparator()
+
+        self.act_snap = QAction("Snapshot", self)
+        self.act_snap.setShortcut(QKeySequence("Ctrl+S"))
+        self.act_snap.setToolTip("Save the current frame as TIFF + settings JSON to the snapshot "
+                                 "folder (Ctrl+S)")
+        self.act_snap.triggered.connect(lambda: self.save_snapshot(ask=False))
+        tb.addAction(self.act_snap)
+        self.act_snap_as = QAction("Save as…", self)
+        self.act_snap_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self.act_snap_as.setToolTip("Save the current frame, choosing the file name (Ctrl+Shift+S)")
+        self.act_snap_as.triggered.connect(lambda: self.save_snapshot(ask=True))
+        tb.addAction(self.act_snap_as)
+        act_folder = QAction("Folder…", self)
+        act_folder.setToolTip("Choose / open the snapshot folder")
+        act_folder.triggered.connect(self._snapshot_folder_menu)
+        tb.addAction(act_folder)
+        tb.addSeparator()
+        act_help = QAction("Help", self)
+        act_help.setShortcut(QKeySequence("F1"))
+        act_help.triggered.connect(self._show_help)
+        tb.addAction(act_help)
         self.toolbar = tb
 
     def _build_statusbar(self) -> None:
@@ -212,7 +256,63 @@ class MainWindow(QMainWindow):
 
     def process_frame(self, frame: Frame):
         """Reference capture/correction; returns the image to display and analyse."""
-        return self.reference_tab.process(frame.image)
+        self._last_display = self.reference_tab.process(frame.image)
+        return self._last_display
+
+    # ---------------------------------------------------------- snapshots
+    def snapshot_dir(self) -> Path:
+        default = Path.home() / "Pictures" / "BlackflyGUI"
+        return Path(self.settings.value("snapshot_dir", str(default)))
+
+    def save_snapshot(self, ask: bool = False) -> list[Path]:
+        frame = self.controller.last_frame
+        if frame is None:
+            self.statusBar().showMessage("No frame to save yet", 5000)
+            return []
+        path = default_path(self.snapshot_dir(), self.controller)
+        if ask:
+            chosen, _ = QFileDialog.getSaveFileName(self, "Save snapshot", str(path), "TIFF (*.tif *.tiff)")
+            if not chosen:
+                return []
+            path = Path(chosen)
+        mode = self.reference_tab.manager.mode
+        corrected = self._last_display if mode != "off" else None
+        try:
+            files = save_snapshot(path, frame, self.controller, corrected, MODES.get(mode, ""))
+        except OSError as exc:
+            QMessageBox.critical(self, "Could not save snapshot", str(exc))
+            return []
+        extra = " (+ corrected)" if len(files) > 2 else ""
+        self.statusBar().showMessage(f"Saved {files[0]}{extra}", 10000)
+        return files
+
+    def _snapshot_folder_menu(self) -> None:
+        box = QMessageBox(self)
+        box.setWindowTitle("Snapshot folder")
+        box.setText(f"Snapshots are saved to:\n{self.snapshot_dir()}")
+        open_b = box.addButton("Open folder", QMessageBox.ButtonRole.ActionRole)
+        change_b = box.addButton("Change…", QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Close)
+        box.exec()
+        if box.clickedButton() is open_b:
+            self.snapshot_dir().mkdir(parents=True, exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.snapshot_dir())))
+        elif box.clickedButton() is change_b:
+            folder = QFileDialog.getExistingDirectory(self, "Snapshot folder", str(self.snapshot_dir()))
+            if folder:
+                self.settings.setValue("snapshot_dir", folder)
+
+    def _show_help(self) -> None:
+        QMessageBox.about(self, "Blackfly GUI", HELP_HTML.format(version=__version__))
+
+    # -------------------------------------------------------------- layout
+    def _restore_layout(self) -> None:
+        geom = self.settings.value("window_geometry")
+        state = self.settings.value("window_state")
+        if geom is not None:
+            self.restoreGeometry(geom)
+        if state is not None:
+            self.restoreState(state)
 
     def _on_opened(self, dev: DeviceInfo) -> None:
         self.setWindowTitle(f"Blackfly GUI {__version__} - {dev.label}")
@@ -236,6 +336,8 @@ class MainWindow(QMainWindow):
         self.device_combo.setEnabled(not is_open)
         self.act_refresh.setEnabled(not is_open)
         self.act_stream.setEnabled(is_open)
+        self.act_snap.setEnabled(is_open)
+        self.act_snap_as.setEnabled(is_open)
         self.act_stream.setChecked(self.controller.is_streaming)
         self.act_stream.setText("Stop" if self.controller.is_streaming else "Start")
 
@@ -245,7 +347,13 @@ class MainWindow(QMainWindow):
             return
         if c.is_streaming:
             cam_fps, disp_fps = c.measured_rates()
-            self.lbl_fps.setText(f"camera {cam_fps:5.1f} fps | display {disp_fps:5.1f} fps")
+            text = f"camera {cam_fps:5.1f} fps | display {disp_fps:5.1f} fps"
+            assert c.backend is not None
+            stats = c.backend.stream_stats()
+            lost = int(stats.get("dropped", 0) + stats.get("lost", 0) + stats.get("incomplete", 0))
+            if lost:
+                text += f" | {lost} dropped"
+            self.lbl_fps.setText(text)
         else:
             self.lbl_fps.setText("stopped")
         temp = c.get("DeviceTemperature")
@@ -253,6 +361,8 @@ class MainWindow(QMainWindow):
             self.lbl_temp.setText(f"{temp:.1f} °C")
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self.settings.setValue("window_geometry", self.saveGeometry())
+        self.settings.setValue("window_state", self.saveState())
         self.controller.close()
         super().closeEvent(event)
 

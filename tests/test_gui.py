@@ -173,3 +173,17 @@ def test_reference_dark_subtraction(win, qtbot):
     qtbot.waitUntil(lambda: win.image_view.image is not None and win.image_view.image.dtype.kind == "f",
                     timeout=3000)
     assert rt.manager.warning == ""
+
+
+def test_snapshot_writes_tiff_and_sidecar(win, tmp_path):
+    import json
+
+    import tifffile
+
+    win.settings.setValue("snapshot_dir", str(tmp_path / "snaps"))
+    files = win.save_snapshot()
+    tif, side = files[0], files[-1]
+    img = tifffile.imread(tif)
+    assert img.shape == win.controller.last_frame.image.shape
+    meta = json.loads(side.read_text())
+    assert meta["camera"]["Width"] == 2048 and meta["pixel_format"] == "Mono8"
