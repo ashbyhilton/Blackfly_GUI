@@ -60,9 +60,10 @@ def test_software_trigger_flow(win, qtbot):
     win.trigger_panel.refresh()
     assert mode.combo.currentText() == "On"
     assert fire.isEnabled()
+    qtbot.wait(300)  # let frames already in flight arrive
     before = c.last_frame.frame_id
     qtbot.wait(300)
-    assert c.last_frame.frame_id - before <= 1  # waiting for triggers
+    assert c.last_frame.frame_id == before  # waiting for triggers
     fire.button.click()
     qtbot.waitUntil(lambda: c.last_frame.frame_id > before, timeout=2000)
 
