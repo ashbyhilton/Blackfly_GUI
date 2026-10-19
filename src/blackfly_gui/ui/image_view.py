@@ -27,7 +27,7 @@ class ImageView(QWidget):
         self.view: pg.ViewBox = self.glw.addViewBox(row=0, col=0, lockAspect=True, invertY=True)
         self.view.setMenuEnabled(True)
         self.image_item = pg.ImageItem()
-        self.image_item.setAutoDownsample(True)
+        self.image_item.setAutoDownsample(False)  # mean-downsampling costs ~25 ms per 3 MP frame
         self.view.addItem(self.image_item)
         self.sat_item = pg.ImageItem()
         self.sat_item.setZValue(5)

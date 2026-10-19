@@ -5,13 +5,24 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
-from PySide6.QtWidgets import QComboBox, QDockWidget, QLabel, QMainWindow, QMessageBox, QToolBar, QWidget
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDockWidget,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QScrollArea,
+    QToolBar,
+    QWidget,
+)
 
 from .. import __version__
 from ..camera import CameraBackend, CameraError, DeviceInfo, Frame, discover
 from ..camera.controller import CameraController
 from .image_view import ImageView
+from .panels.acquisition import AcquisitionPanel
+from .panels.trigger import TriggerPanel
 
 
 class MainWindow(QMainWindow):
@@ -29,6 +40,7 @@ class MainWindow(QMainWindow):
 
         self._build_toolbar()
         self._build_statusbar()
+        self._build_panels()
 
         c = self.controller
         c.frame_ready.connect(self._on_frame)
@@ -92,6 +104,20 @@ class MainWindow(QMainWindow):
         for lbl in (self.lbl_res, self.lbl_fps, self.lbl_temp):
             lbl.setContentsMargins(8, 0, 8, 0)
             sb.addPermanentWidget(lbl)
+
+    def _build_panels(self) -> None:
+        c = self.controller
+        self.acquisition_panel = AcquisitionPanel(c)
+        self.trigger_panel = TriggerPanel(c)
+        first = self.add_dock("Acquisition", _scroll(self.acquisition_panel))
+        self.add_dock("Trigger", _scroll(self.trigger_panel), tabify_with=first)
+        first.raise_()
+        QShortcut(QKeySequence("T"), self, activated=self._software_trigger)
+
+    def _software_trigger(self) -> None:
+        c = self.controller
+        if c.is_open and c.get("TriggerMode") == "On" and c.get("TriggerSource") == "Software":
+            c.execute("TriggerSoftware")
 
     def add_dock(self, title: str, widget: QWidget,
                  area: Qt.DockWidgetArea = Qt.DockWidgetArea.RightDockWidgetArea,
@@ -205,3 +231,11 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         self.controller.close()
         super().closeEvent(event)
+
+
+def _scroll(widget: QWidget) -> QScrollArea:
+    area = QScrollArea()
+    area.setWidget(widget)
+    area.setWidgetResizable(True)
+    area.setMinimumWidth(widget.sizeHint().width() + 24)
+    return area

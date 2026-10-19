@@ -375,16 +375,18 @@ class SimulatedCamera(CameraBackend):
     # --------------------------------------------------------- auto modes
     def _auto_once(self, which: str) -> None:
         # Pretend the auto algorithm converged instantly, then revert to Off.
-        self._run_auto(self._mean_fraction_estimate(), which, strength=1.0)
+        self._run_auto(self._meter(self._render(self._render_params())), which, strength=1.0)
         self._nodes[which].value = "Off"
 
-    def _mean_fraction_estimate(self) -> float:
-        frame = self._render(self._render_params())
-        return float(frame.mean()) / self._max_value(self._v("PixelFormat"))
+    def _meter(self, img: np.ndarray) -> float:
+        """Brightness metric for the auto modes: the 99.9th percentile as a
+        fraction of full scale (a mean would be dominated by the dark
+        background and drive the spot into saturation)."""
+        return float(np.percentile(img[::4, ::4], 99.9)) / self._max_value(self._v("PixelFormat"))
 
-    def _run_auto(self, mean_frac: float, which: str, strength: float = 0.3) -> None:
-        target = 0.3
-        ratio = (target / max(mean_frac, 1e-3)) ** strength
+    def _run_auto(self, level: float, which: str, strength: float = 0.3) -> None:
+        target = 0.7
+        ratio = (target / max(level, 1e-3)) ** strength
         if which == "ExposureAuto":
             node = self._nodes["ExposureTime"]
             node.value = float(np.clip(node.value * ratio, 4.0, min(self._exposure_max(), 100_000.0)))
@@ -520,6 +522,6 @@ class SimulatedCamera(CameraBackend):
         with self._lock:
             for which in ("ExposureAuto", "GainAuto"):
                 if self._v(which) == "Continuous":
-                    self._run_auto(float(img.mean()) / self._max_value(fmt), which)
+                    self._run_auto(self._meter(img), which)
         self._frame_id += 1
         return Frame(img, self._frame_id, time.perf_counter() - self._t0, fmt, self._max_value(fmt))

@@ -33,3 +33,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 qt_api = "pyside6"
+filterwarnings = [
+    # pyqtgraph internals on NumPy >= 2.5; harmless
+    "ignore:Setting the shape on a NumPy array:DeprecationWarning:pyqtgraph",
+]

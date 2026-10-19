@@ -18,7 +18,7 @@ import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from .base import CameraBackend, CameraError, DeviceInfo, FeatureInfo, Frame
 
@@ -178,6 +178,23 @@ class CameraController(QObject):
             if was_streaming:
                 self.start()
 
+    def snap(self) -> None:
+        """Acquire a single frame (or fire a software trigger if live in
+        software-trigger mode)."""
+        if not self.is_open:
+            return
+        software = self.get("TriggerMode") == "On" and self.get("TriggerSource") == "Software"
+        if self.is_streaming:
+            if software:
+                self.execute("TriggerSoftware")
+            return
+        self._single_shot = True
+        self.start()
+        if software:
+            self.execute("TriggerSoftware")
+
+    _single_shot = False
+
     def _on_frame_ready(self) -> None:
         if self._thread is None:
             return
@@ -185,6 +202,9 @@ class CameraController(QObject):
         if frame is not None:
             self.last_frame = frame
             self.frame_ready.emit(frame)
+            if self._single_shot:
+                self._single_shot = False
+                QTimer.singleShot(0, self.stop)
 
     def _on_thread_failed(self, text: str) -> None:
         self.message.emit(f"Acquisition error: {text}")
@@ -233,7 +253,12 @@ class CameraController(QObject):
             info.note = info.note or "Read-only"
             return info
         blockers = self._unsatisfied_prerequisites(name)
-        if blockers:
+        if info.type == "command" and name.startswith("Trigger"):
+            # Pausing the stream never enables a trigger command; it depends
+            # on the trigger configuration, which the camera's note explains.
+            info.settable = False
+            info.note = info.note or "Requires TriggerMode = On and TriggerSource = Software"
+        elif blockers:
             info.settable = True
             info.note = "Will set " + ", ".join(f"{f} = {v}" for f, v, _ in blockers) + " automatically"
         elif self.is_streaming:
