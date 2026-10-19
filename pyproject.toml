@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackfly-gui"
+version = "0.1.0"
+description = "Fast, open GUI for Teledyne FLIR Spinnaker (Blackfly S etc.) cameras"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Ashby Hilton" }]
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "numpy>=1.26",
+    "PySide6>=6.6",
+    "pyqtgraph>=0.13.7",
+    "scipy>=1.11",
+    "tifffile>=2024.1.30",
+]
+
+# PySpin ("spinnaker-python") is not on PyPI. Download the wheel matching your
+# Python version from Teledyne and install it separately -- see README.md.
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-qt>=4.4", "pyinstaller>=6.6"]
+
+[project.scripts]
+blackfly-gui = "blackfly_gui.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+
+# Vendor wheels (Spinnaker/PySpin is login-gated; each user downloads their own)
+vendor/*.whl
+vendor/*.zip
+
+# Build output
+build/
+dist/
+
+# User data
+snapshots/
+references/
+*.tif
+*.tiff
+!tests/data/*.tif
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
