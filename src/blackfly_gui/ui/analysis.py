@@ -1,12 +1,14 @@
 """Analysis dock: ROI statistics, line profile (and more tabs added by the
 main window). Work is done on a 10 Hz timer on the newest frame only, so
-analysis never slows down the live view."""
+analysis never slows down the live view. Moving an overlay also triggers an
+update, so analysis works on a still image while acquisition is stopped."""
 
 from __future__ import annotations
 
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QTimer
+from scipy.ndimage import map_coordinates
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -214,6 +216,7 @@ class ProfileTab(QWidget):
         lay.addLayout(top)
         lay.addWidget(self.plot, 1)
         self.line = pg.LineSegmentROI([(0, 0), (100, 100)], pen=LINE_PEN)
+        self.length = 0.0
         self.line.setZValue(11)
         self.line.setVisible(False)
         view.view.addItem(self.line)
@@ -241,16 +244,21 @@ class ProfileTab(QWidget):
             return
         self._place()
         data = img if img.ndim == 2 else img.mean(axis=2)
-        values = self.line.getArrayRegion(data.astype(np.float32, copy=False), self.view.image_item, order=1)
-        values = np.asarray(values, dtype=np.float64)
+        # LineSegmentROI.getArrayRegion ignores imageAxisOrder="row-major" and
+        # samples with x/y swapped, so sample the endpoints ourselves.
+        item = self.view.image_item
+        p0, p1 = (self.line.mapToItem(item, h.pos()) for h in self.line.getHandles()[:2])
+        x, values = sample_line(data, (p0.x(), p0.y()), (p1.x(), p1.y()))
         if values.size < 2:
             return
-        h0, h1 = self.line.getHandles()[:2]
-        p0, p1 = self.line.mapToParent(h0.pos()), self.line.mapToParent(h1.pos())
-        length = float(np.hypot(p1.x() - p0.x(), p1.y() - p0.y()))
-        x = np.linspace(0, length, values.size)
-        self.curve.setData(x, values)
+        length = float(x[-1])
+        self.length = length
+        self.curve.setData(x, values, connect="finite")
         fwhm = profile_fwhm(x, values)
+        if not np.any(np.isfinite(values)):
+            self.half_line.setVisible(False)
+            self.info.setText(f"length {length:.1f} px   line is outside the image")
+            return
         lo, hi = np.nanmin(values), np.nanmax(values)
         self.half_line.setPos((lo + hi) / 2)
         self.half_line.setVisible(fwhm is not None)
@@ -258,11 +266,33 @@ class ProfileTab(QWidget):
                           + (f"FWHM {fwhm:.2f} px" if fwhm is not None else "FWHM n/a"))
 
 
+def sample_line(data: np.ndarray, p0: tuple[float, float],
+                p1: tuple[float, float]) -> tuple[np.ndarray, np.ndarray]:
+    """Bilinear samples of a 2D (row-major) image along p0 -> p1, given in
+    view coordinates where pixel (i, j) spans [j, j+1] x [i, i+1]. Returns
+    (distance from p0, values) with about one sample per pixel; points outside
+    the image are NaN."""
+    (x0, y0), (x1, y1) = p0, p1
+    length = float(np.hypot(x1 - x0, y1 - y0))
+    n = max(int(np.ceil(length)) + 1, 2)
+    t = np.linspace(0.0, 1.0, n)
+    cols = x0 + t * (x1 - x0) - 0.5  # pixel centres sit at i + 0.5
+    rows = y0 + t * (y1 - y0) - 0.5
+    values = map_coordinates(data.astype(np.float64, copy=False), [rows, cols], order=1,
+                             mode="nearest")
+    h, w = data.shape
+    outside = (rows < -0.5) | (rows > h - 0.5) | (cols < -0.5) | (cols > w - 0.5)
+    values[outside] = np.nan
+    return t * length, values
+
+
 def profile_fwhm(x: np.ndarray, y: np.ndarray) -> float | None:
     """Full width at half maximum of the main peak (baseline = min), by
     linear interpolation of the half-max crossings."""
-    if y.size < 3 or not np.all(np.isfinite(y)):
-        return None
+    finite = np.flatnonzero(np.isfinite(y))
+    if finite.size < 3 or finite[-1] - finite[0] + 1 != finite.size:
+        return None  # need one contiguous in-image stretch
+    x, y = x[finite[0]:finite[-1] + 1], y[finite[0]:finite[-1] + 1]
     lo, hi = float(y.min()), float(y.max())
     if hi <= lo:
         return None
@@ -294,6 +324,10 @@ class AnalysisDock(QTabWidget):
         self.addTab(self.profile_tab, "Line profile")
         self._tabs = [self.stats_tab, self.profile_tab]
         self._dirty = False
+        self.aroi.roi.sigRegionChanged.connect(self.request_update)
+        self.profile_tab.line.sigRegionChanged.connect(self.request_update)
+        self.profile_tab.enable.toggled.connect(self.request_update)
+        self.stats_tab.show_roi.toggled.connect(self.request_update)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(100)
@@ -305,6 +339,11 @@ class AnalysisDock(QTabWidget):
     def update_frame(self, display: np.ndarray, raw: np.ndarray, max_value: float, frame_id: int) -> None:
         self.ctx.display, self.ctx.raw = display, raw
         self.ctx.max_value, self.ctx.frame_id = max_value, frame_id
+        self._dirty = True
+
+    def request_update(self, *_args) -> None:
+        """Re-run analysis on the current frame at the next tick (overlay
+        moved, option changed); works while acquisition is stopped."""
         self._dirty = True
 
     def _tick(self) -> None:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -78,7 +78,7 @@ class GaussianTab(QWidget):
         self._fit_signals.done.connect(self._on_done)
         self._raw_saturated = False
         self._busy = False
-        self._last_fit_frame = -1
+        self._last_fit_key: tuple | None = None
         self.result: GaussianFit | None = None
         self._result_offset = (0, 0)
         qs = QSettings()
@@ -156,7 +156,10 @@ class GaussianTab(QWidget):
         qs.setValue("magnification", self.magnification.value())
 
     def _on_enable(self, on: bool) -> None:
-        if not on:
+        if on:
+            self._last_fit_key = None
+            self.update_view()
+        else:
             self.result = None
             self._update_overlay()
             self.status.setText("")
@@ -166,9 +169,12 @@ class GaussianTab(QWidget):
         img = self.ctx.display
         if not self.enable.isChecked() or img is None or self._busy:
             return
-        if self.ctx.frame_id == self._last_fit_frame:
-            return
         sl = self.aroi.slices(img.shape)
+        # Refit on a new frame or a moved ROI, so the fit follows the ROI on
+        # a still image too.
+        key = (self.ctx.frame_id, id(img), self.aroi.rect() if sl is not None else None)
+        if key == self._last_fit_key:
+            return
         if sl is None:
             region, x_off, y_off = img, 0, 0
             raw = self.ctx.raw
@@ -186,11 +192,13 @@ class GaussianTab(QWidget):
         job = _FitJob(np.array(region, copy=True), x_off, y_off, saturation, self._fit_signals)
         self._raw_saturated = sat_note
         self._busy = True
-        self._last_fit_frame = self.ctx.frame_id
+        self._last_fit_key = key
         self.pool.start(job)
 
     def _on_done(self, result: GaussianFit, x_off: int, y_off: int) -> None:
         self._busy = False
+        # Anything that changed while this fit ran (ROI moved) is fitted next.
+        QTimer.singleShot(0, self.update_view)
         if self._raw_saturated:
             result.warnings.append("Saturated pixels in the raw image: fit is biased")
         if not self.enable.isChecked():

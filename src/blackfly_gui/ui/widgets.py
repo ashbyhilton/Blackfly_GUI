@@ -225,19 +225,31 @@ class FeatureNumber(FeatureWidget):
         return self.spin.minimum(), self.spin.maximum()
 
     def _update_from(self, info: FeatureInfo) -> None:
+        if self.spin.hasFocus():
+            # The user may be typing: touching the range/decimals/suffix makes
+            # Qt re-format the line edit and throws away the partial entry.
+            return
         is_int = info.type == "int"
         decimals = 0 if is_int else (self.decimals if self.decimals is not None else 3)
-        self.spin.blockSignals(True)
-        self.spin.setDecimals(decimals)
         lo = info.min if info.min is not None else -1e12
         hi = info.max if info.max is not None else 1e12
-        self.spin.setRange(lo, hi)
         if info.inc:
-            self.spin.setSingleStep(info.inc)
+            step = info.inc
         elif not is_int:
-            self.spin.setSingleStep(10 ** (math.floor(math.log10(max(abs(hi - lo), 1e-9))) - 2))
-        self.spin.setSuffix(f" {info.unit}" if info.unit else "")
-        if not self.spin.hasFocus() and info.value is not None:
+            step = 10 ** (math.floor(math.log10(max(abs(hi - lo), 1e-9))) - 2)
+        else:
+            step = self.spin.singleStep()
+        suffix = f" {info.unit}" if info.unit else ""
+        self.spin.blockSignals(True)
+        if self.spin.decimals() != decimals:
+            self.spin.setDecimals(decimals)
+        if (self.spin.minimum(), self.spin.maximum()) != (lo, hi):
+            self.spin.setRange(lo, hi)
+        if self.spin.singleStep() != step:
+            self.spin.setSingleStep(step)
+        if self.spin.suffix() != suffix:
+            self.spin.setSuffix(suffix)
+        if info.value is not None and self.spin.value() != float(info.value):
             self.spin.setValue(float(info.value))
         self.spin.blockSignals(False)
         if self.slider is not None and not self.slider.isSliderDown():

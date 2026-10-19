@@ -187,3 +187,52 @@ def test_snapshot_writes_tiff_and_sidecar(win, tmp_path):
     assert img.shape == win.controller.last_frame.image.shape
     meta = json.loads(side.read_text())
     assert meta["camera"]["Width"] == 2048 and meta["pixel_format"] == "Mono8"
+
+
+def test_line_profile_samples_under_the_line(win, qtbot):
+    """The profile must read the pixels under the drawn line (x/y not swapped)
+    and follow the line when it is moved with acquisition stopped."""
+    import numpy as np
+    from blackfly_gui.ui.analysis import sample_line
+    img = np.zeros((40, 100))
+    img[10, :] = 5.0  # horizontal stripe in row 10
+    _, v = sample_line(img, (0.0, 10.5), (100.0, 10.5))
+    assert np.nanmin(v) == pytest.approx(5.0)
+    _, v = sample_line(img, (10.5, 0.5), (10.5, 39.5))  # vertical, through pixel centres
+    assert np.nanmax(v) == pytest.approx(5.0) and np.nanmedian(v) == 0.0
+    _, v = sample_line(img, (-20.0, 10.5), (50.0, 10.5))
+    assert np.isnan(v[0]) and v[-1] == pytest.approx(5.0)
+
+    c = win.controller
+    c.stop()
+    qtbot.waitUntil(lambda: not c.is_streaming, timeout=3000)
+    pt = win.analysis.profile_tab
+    pt.enable.setChecked(True)
+    qtbot.waitUntil(lambda: "length" in pt.info.text(), timeout=2000)
+    pt.line.movePoint(0, (100, 100))
+    pt.line.movePoint(1, (400, 100))
+    qtbot.waitUntil(lambda: pt.length == pytest.approx(300.0), timeout=2000)
+
+
+def test_gaussian_refits_when_roi_moves_while_stopped(win, qtbot):
+    c = win.controller
+    c.set("ExposureTime", 8000.0)
+    c.stop()
+    qtbot.waitUntil(lambda: not c.is_streaming, timeout=3000)
+    g = win.gaussian_tab
+    g.enable.setChecked(True)
+    qtbot.waitUntil(lambda: g.result is not None, timeout=8000)
+    win.analysis.stats_tab.show_roi.setChecked(True)
+    win.analysis.aroi.roi.setPos((0, 0))
+    win.analysis.aroi.roi.setSize((50, 50))
+    qtbot.waitUntil(lambda: g._result_offset == (0, 0) and g._last_fit_key[2] == (0, 0, 50, 50),
+                    timeout=8000)
+
+
+def test_spin_box_edit_survives_refresh(win, monkeypatch):
+    exp = find(win.acquisition_panel, "ExposureTime")
+    win.acquisition_panel.refresh()
+    monkeypatch.setattr(exp.spin, "hasFocus", lambda: True)  # user is typing
+    exp.spin.lineEdit().setText("123 us")
+    win.acquisition_panel.refresh()  # the 1 s poll
+    assert exp.spin.lineEdit().text() == "123 us"
