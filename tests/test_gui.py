@@ -80,3 +80,35 @@ def test_missing_features_hidden(win):
     # The simulated mono camera has no white balance -> row hidden.
     wb = find(win.acquisition_panel, "BalanceWhiteAuto")
     assert wb.isHidden() and wb.label.isHidden()
+
+
+def test_binning_quick_button_and_roi(win, qtbot):
+    c = win.controller
+    win.format_panel._set_binning(2)
+    assert (c.get("BinningHorizontal"), c.get("BinningVertical")) == (2, 2)
+    assert (c.get("Width"), c.get("Height")) == (1024, 768)
+    qtbot.waitUntil(lambda: c.last_frame.image.shape == (768, 1024), timeout=3000)
+    # Enlarging width via the ROI widget reduces the offset instead of failing.
+    c.set_roi(800, 0, 128, 768)
+    width = find(win.format_panel, "Width")
+    win.format_panel.refresh()
+    width.apply(1024)
+    assert (c.get("Width"), c.get("OffsetX")) == (1024, 0)
+    win.format_panel._center_roi()
+    c.set_roi(0, 0, 512, 256)
+    win.format_panel._center_roi()
+    assert (c.get("OffsetX"), c.get("OffsetY")) == (256, 256)
+
+
+def test_features_browser_search_and_edit(win):
+    fp = win.features_panel
+    fp.show()
+    fp.rebuild()
+    assert "ExposureTime" in fp._items
+    fp.search.setText("gamma")
+    visible = [n for n, it in fp._items.items() if not it.isHidden()]
+    assert set(visible) == {"GammaEnable", "Gamma"}
+    fp.tree.setCurrentItem(fp._items["GammaEnable"])
+    assert fp.editor is not None and fp.editor.name == "GammaEnable"
+    fp.editor.check.setChecked(True)
+    assert win.controller.get("GammaEnable") is True

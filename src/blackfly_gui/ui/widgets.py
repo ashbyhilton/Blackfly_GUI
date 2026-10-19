@@ -280,8 +280,12 @@ class FeatureForm(QGroupBox):
         self.widgets.append(widget)
         return widget
 
-    def add_row(self, label: str, widget: QWidget) -> None:
-        self.form.addRow(label, widget)
+    def add_row(self, label: str | QWidget, widget: QWidget | None = None) -> None:
+        """Add a non-feature row (buttons, hints). A single widget spans the row."""
+        if widget is None:
+            self.form.addRow(label)
+        else:
+            self.form.addRow(label, widget)
 
     def refresh(self) -> None:
         for w in self.widgets:

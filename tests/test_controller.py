@@ -66,3 +66,14 @@ def test_errors_reported_not_raised(ctrl, qtbot):
     with qtbot.waitSignal(ctrl.message) as blocker:
         assert not ctrl.set("Width", 99999)
     assert "Width" in blocker.args[0]
+
+
+def test_immediate_start_stop_does_not_leave_thread_spinning(ctrl):
+    # Regression: a stop requested before the thread was scheduled used to be
+    # overwritten, leaving the thread busy-looping on a stopped camera.
+    threads = []
+    for _ in range(20):
+        ctrl.start()
+        threads.append(ctrl._thread)
+        ctrl.stop()
+    assert all(t.isFinished() for t in threads)

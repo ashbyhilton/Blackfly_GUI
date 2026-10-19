@@ -22,7 +22,10 @@ from ..camera import CameraBackend, CameraError, DeviceInfo, Frame, discover
 from ..camera.controller import CameraController
 from .image_view import ImageView
 from .panels.acquisition import AcquisitionPanel
+from .panels.features import FeaturesPanel
+from .panels.format import FormatPanel
 from .panels.trigger import TriggerPanel
+from .panels.usersets import UserSetsPanel
 
 
 class MainWindow(QMainWindow):
@@ -109,8 +112,14 @@ class MainWindow(QMainWindow):
         c = self.controller
         self.acquisition_panel = AcquisitionPanel(c)
         self.trigger_panel = TriggerPanel(c)
+        self.format_panel = FormatPanel(c)
+        self.usersets_panel = UserSetsPanel(c)
+        self.features_panel = FeaturesPanel(c)
         first = self.add_dock("Acquisition", _scroll(self.acquisition_panel))
         self.add_dock("Trigger", _scroll(self.trigger_panel), tabify_with=first)
+        self.add_dock("Format", _scroll(self.format_panel), tabify_with=first)
+        self.add_dock("User sets", _scroll(self.usersets_panel), tabify_with=first)
+        self.add_dock("All features", self.features_panel, tabify_with=first)
         first.raise_()
         QShortcut(QKeySequence("T"), self, activated=self._software_trigger)
 
@@ -123,7 +132,7 @@ class MainWindow(QMainWindow):
                  area: Qt.DockWidgetArea = Qt.DockWidgetArea.RightDockWidgetArea,
                  tabify_with: QDockWidget | None = None) -> QDockWidget:
         dock = QDockWidget(title, self)
-        dock.setObjectName(f"dock_{title.lower().replace(' ', '_')}")
+        dock.setObjectName("dock_" + "".join(ch if ch.isalnum() else "_" for ch in title.lower()))
         dock.setWidget(widget)
         self.addDockWidget(area, dock)
         if tabify_with is not None:

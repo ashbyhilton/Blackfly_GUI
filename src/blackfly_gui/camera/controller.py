@@ -49,7 +49,7 @@ class AcquisitionThread(QThread):
     def __init__(self, backend: CameraBackend) -> None:
         super().__init__()
         self._backend = backend
-        self._running = False
+        self._running = True
         self._lock = threading.Lock()
         self._latest: Frame | None = None
         self._pending = False
@@ -57,7 +57,8 @@ class AcquisitionThread(QThread):
         self.frames_displayed = 0
 
     def run(self) -> None:
-        self._running = True
+        # Note: _running is set True in __init__, not here -- a stop requested
+        # before the thread is scheduled must not be overwritten.
         while self._running:
             try:
                 frame = self._backend.grab(GRAB_TIMEOUT_MS)
@@ -66,6 +67,8 @@ class AcquisitionThread(QThread):
                     self.failed.emit(str(exc))
                 break
             if frame is None:
+                if not self._backend.is_streaming:
+                    break  # never spin against a stopped camera
                 continue
             with self._lock:
                 self._latest = frame
@@ -269,6 +272,13 @@ class CameraController(QObject):
             info.note = info.note or "Not writable in the current camera state"
         return info
 
+    def only_restorable_blockers(self, name: str) -> bool:
+        """True if ``name`` is locked solely by prerequisites the controller
+        changes temporarily and restores (e.g. TriggerSource needing
+        TriggerMode=Off), so writing it has no lasting side effects."""
+        blockers = self._unsatisfied_prerequisites(name)
+        return bool(blockers) and all(restore for _f, _v, restore in blockers)
+
     def _unsatisfied_prerequisites(self, name: str) -> list[tuple[str, Any, bool]]:
         out = []
         for feat, required, restore in PREREQUISITES.get(name, []):
@@ -290,6 +300,13 @@ class CameraController(QObject):
             return False
         finally:
             self.features_changed.emit()
+
+    def apply(self, name: str, value: Any) -> None:
+        """Like :meth:`set` but raises :class:`CameraError` and emits no
+        signals -- for bulk operations that report once at the end."""
+        if not self.is_open:
+            raise CameraError("Camera is not open")
+        self._set_resolving(name, value)
 
     def _set_resolving(self, name: str, value: Any) -> None:
         assert self.backend is not None
