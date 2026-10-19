@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from .. import __version__
 from ..camera import CameraBackend, CameraError, DeviceInfo, Frame, discover
 from ..camera.controller import CameraController
+from .analysis import AnalysisDock
 from .image_view import ImageView
 from .panels.acquisition import AcquisitionPanel
 from .panels.features import FeaturesPanel
@@ -121,6 +122,9 @@ class MainWindow(QMainWindow):
         self.add_dock("User sets", _scroll(self.usersets_panel), tabify_with=first)
         self.add_dock("All features", self.features_panel, tabify_with=first)
         first.raise_()
+        self.analysis = AnalysisDock(c, self.image_view)
+        self.analysis_dock = self.add_dock("Analysis", self.analysis, Qt.DockWidgetArea.BottomDockWidgetArea)
+        self.resizeDocks([self.analysis_dock], [260], Qt.Orientation.Vertical)
         QShortcut(QKeySequence("T"), self, activated=self._software_trigger)
 
     def _software_trigger(self) -> None:
@@ -195,9 +199,16 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------- slots
     def _on_frame(self, frame: Frame) -> None:
-        self.image_view.set_image(frame.image, frame.max_value)
+        display = self.process_frame(frame)
+        self.image_view.set_image(display, frame.max_value, raw=frame.image)
+        self.analysis.update_frame(display, frame.image, frame.max_value, frame.frame_id)
         h, w = frame.shape
         self.lbl_res.setText(f"{w} x {h}  {frame.pixel_format}")
+
+    def process_frame(self, frame: Frame):
+        """Hook for display processing (reference correction); returns the
+        image to display and analyse."""
+        return frame.image
 
     def _on_opened(self, dev: DeviceInfo) -> None:
         self.setWindowTitle(f"Blackfly GUI {__version__} - {dev.label}")

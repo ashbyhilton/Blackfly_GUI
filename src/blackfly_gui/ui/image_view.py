@@ -69,29 +69,37 @@ class ImageView(QWidget):
         self.glw.scene().sigMouseClicked.connect(self._on_mouse_clicked)
 
     # ---------------------------------------------------------- display
-    def set_image(self, image: np.ndarray, max_value: float) -> None:
-        """Show a new frame. ``max_value`` is the saturation level."""
+    def set_image(self, image: np.ndarray, max_value: float, raw: np.ndarray | None = None) -> None:
+        """Show a new frame. ``max_value`` is the camera saturation level and
+        ``raw`` the uncorrected camera data used to mark saturated pixels
+        (defaults to ``image``; differs when reference correction is on)."""
         shape_changed = self.image is None or self.image.shape != image.shape
+        kind_changed = self.image is not None and self.image.dtype.kind != image.dtype.kind
         range_changed = max_value != self.max_value
         self.image = image
         self.max_value = float(max_value)
 
         if self.auto_levels.isChecked():
             sub = image[::4, ::4]
-            lo, hi = float(sub.min()), float(sub.max())
+            lo, hi = float(np.nanmin(sub)), float(np.nanmax(sub))
+            if not np.isfinite(lo) or not np.isfinite(hi):
+                lo, hi = 0.0, 1.0
             if hi <= lo:
                 hi = lo + 1
             self.image_item.setImage(image, autoLevels=False, levels=(lo, hi))
         else:
             self.image_item.setImage(image, autoLevels=False)
-            if not self._levels_initialised or range_changed:
+            if not self._levels_initialised or range_changed or kind_changed:
                 self.set_full_range()
         self._levels_initialised = True
 
-        if self.saturation.isChecked() and np.issubdtype(image.dtype, np.integer):
-            mask = image >= self.max_value
+        sat_src = raw if raw is not None and raw.shape[:2] == image.shape[:2] else image
+        if self.saturation.isChecked() and np.issubdtype(sat_src.dtype, np.integer):
+            mask = sat_src >= self.max_value
+            if mask.ndim == 3:
+                mask = mask.any(axis=2)
             if mask.any():
-                rgba = np.zeros(image.shape[:2] + (4,), dtype=np.uint8)
+                rgba = np.zeros(mask.shape + (4,), dtype=np.uint8)
                 rgba[mask] = (255, 0, 0, 255)
                 self.sat_item.setImage(rgba, autoLevels=False)
                 self.sat_item.setVisible(True)

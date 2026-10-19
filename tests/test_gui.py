@@ -112,3 +112,37 @@ def test_features_browser_search_and_edit(win):
     assert fp.editor is not None and fp.editor.name == "GammaEnable"
     fp.editor.check.setChecked(True)
     assert win.controller.get("GammaEnable") is True
+
+
+def test_analysis_stats_and_camera_roi(win, qtbot):
+    a = win.analysis
+    st = a.stats_tab
+    st.show_roi.setChecked(True)
+    a.aroi.roi.setPos((100, 200))
+    a.aroi.roi.setSize((400, 300))
+    a.update_frame(*_latest(win))
+    a._tick()
+    assert "w=400" in st.rect_label.text()
+    assert st.table.item(5, 1).text() == str(400 * 300)
+    st._apply_camera_roi()
+    c = win.controller
+    assert (c.get("OffsetX"), c.get("OffsetY"), c.get("Width"), c.get("Height")) == (100, 200, 400, 300)
+    qtbot.waitUntil(lambda: c.last_frame.image.shape == (300, 400), timeout=3000)
+
+
+def test_line_profile_fwhm(win):
+    import numpy as np
+    from blackfly_gui.ui.analysis import profile_fwhm
+    x = np.linspace(-50, 50, 1001)
+    y = 10 * np.exp(-x ** 2 / (2 * 8.0 ** 2)) + 2
+    assert profile_fwhm(x, y) == pytest.approx(2.3548 * 8.0, rel=1e-3)
+    pt = win.analysis.profile_tab
+    pt.enable.setChecked(True)
+    win.analysis.update_frame(*_latest(win))
+    win.analysis._tick()
+    assert "length" in pt.info.text()
+
+
+def _latest(win):
+    f = win.controller.last_frame
+    return f.image, f.image, f.max_value, f.frame_id
