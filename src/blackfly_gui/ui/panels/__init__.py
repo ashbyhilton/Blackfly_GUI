@@ -1,0 +1,1 @@
+"""Dockable control panels."""
