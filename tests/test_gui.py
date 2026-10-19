@@ -146,3 +146,30 @@ def test_line_profile_fwhm(win):
 def _latest(win):
     f = win.controller.last_frame
     return f.image, f.image, f.max_value, f.frame_id
+
+
+def test_gaussian_fit_tab(win, qtbot):
+    c = win.controller
+    c.set("ExposureTime", 8000.0)  # spot well below saturation
+    g = win.gaussian_tab
+    g.enable.setChecked(True)
+    qtbot.waitUntil(lambda: g.result is not None, timeout=8000)
+    r = g.result
+    assert r.success, (r.message, r.warnings)
+    # Simulator spot: sigma 60 x 35 px, 25 degrees.
+    assert r.sigma_major == pytest.approx(60, rel=0.05)
+    assert r.sigma_minor == pytest.approx(35, rel=0.05)
+    assert r.theta_deg == pytest.approx(25, abs=2)
+    assert g.ellipse.isVisible()
+    um = float(g.table.item(2, 2).text())
+    assert um == pytest.approx(r.sigma_major * 3.45, rel=0.01)
+
+
+def test_reference_dark_subtraction(win, qtbot):
+    rt = win.reference_tab
+    rt._capture("dark", 3)
+    qtbot.waitUntil(lambda: rt.manager.images["dark"] is not None, timeout=5000)
+    rt.mode.setCurrentIndex(rt.mode.findData("sub_dark"))
+    qtbot.waitUntil(lambda: win.image_view.image is not None and win.image_view.image.dtype.kind == "f",
+                    timeout=3000)
+    assert rt.manager.warning == ""

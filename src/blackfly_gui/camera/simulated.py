@@ -461,8 +461,8 @@ class SimulatedCamera(CameraBackend):
         # ... plus an orbiting elliptical rotated Gaussian spot, evaluated only
         # inside its bounding box.
         t = p["t"]
-        cx = SENSOR_W / 2 + 300 * math.cos(t * 0.4)
-        cy = SENSOR_H / 2 + 200 * math.sin(t * 0.4)
+        cx = SENSOR_W / 2 + 300 * math.cos(t * 0.15)
+        cy = SENSOR_H / 2 + 200 * math.sin(t * 0.15)
         sig_a, sig_b, theta = 60.0, 35.0, math.radians(25)
         peak_e = 600.0 * exp_ms
         half = 5 * sig_a

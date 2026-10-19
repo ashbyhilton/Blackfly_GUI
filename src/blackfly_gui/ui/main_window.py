@@ -21,6 +21,7 @@ from .. import __version__
 from ..camera import CameraBackend, CameraError, DeviceInfo, Frame, discover
 from ..camera.controller import CameraController
 from .analysis import AnalysisDock
+from .analysis_tools import GaussianTab, ReferenceTab
 from .image_view import ImageView
 from .panels.acquisition import AcquisitionPanel
 from .panels.features import FeaturesPanel
@@ -123,6 +124,10 @@ class MainWindow(QMainWindow):
         self.add_dock("All features", self.features_panel, tabify_with=first)
         first.raise_()
         self.analysis = AnalysisDock(c, self.image_view)
+        self.gaussian_tab = GaussianTab(self.analysis.ctx, self.analysis.aroi, self.image_view, c)
+        self.reference_tab = ReferenceTab(self.analysis.ctx, c)
+        self.analysis.add_analysis_tab(self.gaussian_tab, "Gaussian fit")
+        self.analysis.add_analysis_tab(self.reference_tab, "Reference")
         self.analysis_dock = self.add_dock("Analysis", self.analysis, Qt.DockWidgetArea.BottomDockWidgetArea)
         self.resizeDocks([self.analysis_dock], [260], Qt.Orientation.Vertical)
         QShortcut(QKeySequence("T"), self, activated=self._software_trigger)
@@ -206,9 +211,8 @@ class MainWindow(QMainWindow):
         self.lbl_res.setText(f"{w} x {h}  {frame.pixel_format}")
 
     def process_frame(self, frame: Frame):
-        """Hook for display processing (reference correction); returns the
-        image to display and analyse."""
-        return frame.image
+        """Reference capture/correction; returns the image to display and analyse."""
+        return self.reference_tab.process(frame.image)
 
     def _on_opened(self, dev: DeviceInfo) -> None:
         self.setWindowTitle(f"Blackfly GUI {__version__} - {dev.label}")
