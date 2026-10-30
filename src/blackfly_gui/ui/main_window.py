@@ -20,10 +20,12 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from ..analysis.alignment import RunningAverage
 from ..analysis.reference import MODES
 from ..snapshot import default_path, save_snapshot
 from ..camera import CameraBackend, CameraError, DeviceInfo, Frame, discover
 from ..camera.controller import CameraController
+from .alignment import AlignmentTab
 from .analysis import AnalysisDock
 from .analysis_tools import GaussianTab, ReferenceTab
 from .image_view import ImageView
@@ -65,6 +67,7 @@ class MainWindow(QMainWindow):
         self._docks: list[QDockWidget] = []
 
         self._last_display = None
+        self.averager = RunningAverage()
         self._build_toolbar()
         self._build_statusbar()
         self._build_panels()
@@ -174,8 +177,14 @@ class MainWindow(QMainWindow):
         self.projection_tab = ProjectionTab(self.analysis.ctx, self.analysis.aroi, c,
                                             self.gaussian_tab.scale_um)
         self.analysis.add_analysis_tab(self.gaussian_tab, "Gaussian fit")
+        g = self.gaussian_tab
+        self.alignment_tab = AlignmentTab(self.analysis.ctx, self.analysis.aroi, self.image_view, c,
+                                          lambda: g.pixel_size.value() / g.magnification.value())
         self.analysis.add_analysis_tab(self.projection_tab, "X/Y projections")
+        self.analysis.add_analysis_tab(self.alignment_tab, "Alignment")
         self.analysis.add_analysis_tab(self.reference_tab, "Reference")
+        # Don't blend raw and corrected frames in the running average.
+        self.reference_tab.mode.currentIndexChanged.connect(lambda _i: self.averager.reset())
         self.analysis_dock = self.add_dock("Analysis", self.analysis, Qt.DockWidgetArea.BottomDockWidgetArea)
         self.resizeDocks([self.analysis_dock], [260], Qt.Orientation.Vertical)
         QShortcut(QKeySequence("T"), self, activated=self._software_trigger)
@@ -259,8 +268,10 @@ class MainWindow(QMainWindow):
         self.lbl_res.setText(f"{w} x {h}  {frame.pixel_format}")
 
     def process_frame(self, frame: Frame):
-        """Reference capture/correction; returns the image to display and analyse."""
-        self._last_display = self.reference_tab.process(frame.image)
+        """Reference capture/correction, then the running average; returns the
+        image to display and analyse."""
+        self.averager.n = self.image_view.average.value()
+        self._last_display = self.averager.process(self.reference_tab.process(frame.image))
         return self._last_display
 
     # ---------------------------------------------------------- snapshots
@@ -280,9 +291,12 @@ class MainWindow(QMainWindow):
                 return []
             path = Path(chosen)
         mode = self.reference_tab.manager.mode
-        corrected = self._last_display if mode != "off" else None
+        steps = [MODES.get(mode, "")] if mode != "off" else []
+        if self.averager.n > 1:
+            steps.append(f"running average of ~{self.averager.n} frames")
+        corrected = self._last_display if steps else None
         try:
-            files = save_snapshot(path, frame, self.controller, corrected, MODES.get(mode, ""))
+            files = save_snapshot(path, frame, self.controller, corrected, "; ".join(steps))
         except OSError as exc:
             QMessageBox.critical(self, "Could not save snapshot", str(exc))
             return []

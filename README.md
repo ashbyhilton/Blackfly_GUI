@@ -67,6 +67,8 @@ Only one program can use a camera at a time – close SpinView first.
 | Analysis ▸ Line profile | blue line on the image, profile plot and FWHM |
 | Analysis ▸ Gaussian fit | live 2D Gaussian fit in the yellow ROI (or whole image) |
 | Analysis ▸ X/Y projections | sums along x and y of the yellow ROI (or whole image) with 1D Gaussian fits – robust on faint clouds |
+| Analysis ▸ Alignment | tracks the spot centre and shows its offset from a saved reference (blue ⊕), large enough to read from the optical table; turns green within a tolerance. The reference is saved per camera and stays put when you change ROI or binning |
+| Image ▸ Average N frames | running average for display and analysis – brings out weak signals such as a dim MOT; snapshots also save the averaged image |
 | Analysis ▸ Reference | capture/load dark (D) and reference (R) images and choose a correction |
 
 Tips

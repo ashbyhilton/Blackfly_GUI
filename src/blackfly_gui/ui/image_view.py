@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget
 
 
 class ImageView(QWidget):
@@ -48,13 +48,22 @@ class ImageView(QWidget):
         fit = QPushButton("Fit view")
         fit.setToolTip("Zoom to show the whole image (or double-click the image).")
         fit.clicked.connect(self.fit_view)
+        # Read by the main window, which averages before display and analysis.
+        self.average = QSpinBox()
+        self.average.setRange(1, 1000)
+        self.average.setPrefix("Average ")
+        self.average.setSuffix(" frames")
+        self.average.setSpecialValueText("No averaging")
+        self.average.setToolTip("Running average for display and analysis: brings out weak signals such "
+                                "as a dim MOT (noise drops by about √N).\nSnapshots save the raw frame "
+                                "plus the averaged image.")
         self.cursor_label = QLabel("")
         self.cursor_label.setMinimumWidth(220)
         self.cursor_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         bar = QHBoxLayout()
         bar.setContentsMargins(4, 2, 4, 2)
-        for w in (self.auto_levels, self.saturation, full, fit):
+        for w in (self.auto_levels, self.saturation, full, fit, self.average):
             bar.addWidget(w)
         bar.addStretch(1)
         bar.addWidget(self.cursor_label)

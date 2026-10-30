@@ -111,3 +111,43 @@ def test_projection_fits_match_2d_widths():
         assert fx.sigma == pytest.approx(sx, rel=rel_tol)
         assert fy.sigma == pytest.approx(sy, rel=rel_tol)
     assert not fit_gaussian_1d(np.full(50, 3.0)).success
+
+
+def test_spot_centroid_ignores_hot_pixel_and_nan():
+    from blackfly_gui.analysis.alignment import spot_centroid
+    img = synth((300, 400), 30, 150.3, 120.6, 8.0, 8.0, 0.0, 10)  # weak spot
+    img[220, 250] = 255.0  # hot pixel, much brighter than the spot, ~140 px away
+    img[5, 5] = np.nan
+    cx, cy = spot_centroid(img)
+    assert (cx, cy) == (pytest.approx(150.3, abs=0.05), pytest.approx(120.6, abs=0.05))
+    noisy = synth((300, 400), 30, 150.3, 120.6, 8.0, 8.0, 0.0, 10, noise=3)
+    cx, cy = spot_centroid(noisy)
+    assert (cx, cy) == (pytest.approx(150.3, abs=0.3), pytest.approx(120.6, abs=0.3))
+    assert spot_centroid(np.full((50, 50), 10.0)) is None
+    assert spot_centroid(synth((300, 400), 0, 0, 0, 1, 1, 0, 10, noise=3)) is None  # noise only
+    focused = synth((300, 400), 200, 77.4, 201.7, 1.2, 1.2, 0.0, 10, noise=3)
+    cx, cy = spot_centroid(focused)
+    assert (cx, cy) == (pytest.approx(77.4, abs=0.2), pytest.approx(201.7, abs=0.2))
+
+
+def test_geometry_round_trip():
+    from blackfly_gui.analysis.alignment import Geometry
+    g = Geometry(width=512, height=256, offset_x=100, offset_y=40, step_x=2, step_y=2,
+                 reverse_x=True)
+    sx, sy = g.to_sensor(10.5, 20.5)
+    assert (sx, sy) == ((100 + 512 - 10.5) * 2, (40 + 20.5) * 2)
+    assert g.to_image(sx, sy) == pytest.approx((10.5, 20.5))
+
+
+def test_running_average():
+    from blackfly_gui.analysis.alignment import RunningAverage
+    avg = RunningAverage()
+    frame = np.full((4, 4), 7, dtype=np.uint8)
+    assert avg.process(frame) is frame  # n = 1: off, no copy
+    avg.n = 4
+    out = [avg.process(np.full((4, 4), v, dtype=np.uint8)) for v in (0, 4, 8)]
+    assert out[-1][0, 0] == pytest.approx(4.0)  # plain mean while fewer than n frames
+    for _ in range(50):
+        last = avg.process(np.full((4, 4), 100, dtype=np.uint8))
+    assert last[0, 0] == pytest.approx(100, abs=0.01)
+    assert avg.process(np.zeros((2, 2), dtype=np.uint8)).shape == (2, 2)  # resets on new size
