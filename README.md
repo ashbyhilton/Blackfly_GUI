@@ -56,7 +56,7 @@ Only one program can use a camera at a time – close SpinView first.
 
 | Area | What it does |
 |---|---|
-| Toolbar | camera picker, Connect, Start/Stop (**Space**), Snapshot (**Ctrl+S**), Save as (**Ctrl+Shift+S**), snapshot folder, Help (**F1**) |
+| Toolbar | camera picker, Connect, Start/Stop (**Space**), Snapshot (**Ctrl+S**), Save as (**Ctrl+Shift+S**), snapshot folder, **Panels** (reopen closed panels, reset layout), Help (**F1**) |
 | Image | wheel = zoom, drag = pan, double-click = fit; histogram on the right sets display levels (or tick *Auto levels*); red = saturated pixels |
 | Acquisition | exposure, gain, black level, gamma, frame rate, *Single frame* |
 | Trigger | trigger mode/source/edge/delay/overlap; **T** or the button fires a software trigger |
