@@ -95,3 +95,19 @@ def test_reference_save_load(tmp_path):
 def test_region_stats_ignores_nan():
     s = region_stats(np.array([[1.0, np.nan], [3.0, 5.0]], dtype=np.float32))
     assert s.mean == pytest.approx(3.0) and s.n_pixels == 3
+
+
+def test_projection_fits_match_2d_widths():
+    from blackfly_gui.analysis.profile1d import fit_gaussian_1d, projections
+    t = math.radians(30.0)
+    sx, sy = math.hypot(30 * math.cos(t), 12 * math.sin(t)), math.hypot(30 * math.sin(t), 12 * math.cos(t))
+    # noiseless: exact; faint and noisy (peak SNR 5 per pixel): ~0.5 px scatter
+    for noise, abs_tol, rel_tol in ((0, 1e-3, 1e-4), (10, 2.0, 0.1)):
+        img = synth((300, 400), 50, 210.4, 140.7, 30.0, 12.0, 30.0, 20, noise=noise)
+        fx, fy = (fit_gaussian_1d(p) for p in projections(img))
+        assert fx.success and fy.success
+        assert fx.centre == pytest.approx(210.4, abs=abs_tol)
+        assert fy.centre == pytest.approx(140.7, abs=abs_tol)
+        assert fx.sigma == pytest.approx(sx, rel=rel_tol)
+        assert fy.sigma == pytest.approx(sy, rel=rel_tol)
+    assert not fit_gaussian_1d(np.full(50, 3.0)).success

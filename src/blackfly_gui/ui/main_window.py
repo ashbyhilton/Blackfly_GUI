@@ -27,6 +27,7 @@ from ..camera.controller import CameraController
 from .analysis import AnalysisDock
 from .analysis_tools import GaussianTab, ReferenceTab
 from .image_view import ImageView
+from .projections import ProjectionTab
 from .panels.acquisition import AcquisitionPanel
 from .panels.features import FeaturesPanel
 from .panels.format import FormatPanel
@@ -170,7 +171,10 @@ class MainWindow(QMainWindow):
         self.analysis = AnalysisDock(c, self.image_view)
         self.gaussian_tab = GaussianTab(self.analysis.ctx, self.analysis.aroi, self.image_view, c)
         self.reference_tab = ReferenceTab(self.analysis.ctx, c)
+        self.projection_tab = ProjectionTab(self.analysis.ctx, self.analysis.aroi, c,
+                                            self.gaussian_tab.scale_um)
         self.analysis.add_analysis_tab(self.gaussian_tab, "Gaussian fit")
+        self.analysis.add_analysis_tab(self.projection_tab, "X/Y projections")
         self.analysis.add_analysis_tab(self.reference_tab, "Reference")
         self.analysis_dock = self.add_dock("Analysis", self.analysis, Qt.DockWidgetArea.BottomDockWidgetArea)
         self.resizeDocks([self.analysis_dock], [260], Qt.Orientation.Vertical)

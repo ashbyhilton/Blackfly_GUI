@@ -236,3 +236,13 @@ def test_spin_box_edit_survives_refresh(win, monkeypatch):
     exp.spin.lineEdit().setText("123 us")
     win.acquisition_panel.refresh()  # the 1 s poll
     assert exp.spin.lineEdit().text() == "123 us"
+
+
+def test_projection_tab(win, qtbot):
+    pt = win.projection_tab
+    win.analysis.setCurrentWidget(pt)
+    pt.enable.setChecked(True)
+    qtbot.waitUntil(lambda: pt.fits is not None and all(f.success for f in pt.fits), timeout=3000)
+    # Simulator spot: sigma 60 x 35 px at 25 degrees -> sigma_x ~ 56.5 px.
+    assert pt.fits[0].sigma == pytest.approx(56.5, rel=0.05)
+    assert pt.table.item(1, 1).text() == f"{pt.fits[0].sigma * 3.45:.2f}"
