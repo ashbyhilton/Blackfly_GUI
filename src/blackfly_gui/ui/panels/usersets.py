@@ -6,6 +6,7 @@ from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QWidget
 
 from ... import settings_io
+from ...camera import CameraError
 from ...camera.controller import CameraController
 from ..widgets import FeatureButton, FeatureCombo, FeatureForm, FeaturePanel
 
@@ -66,7 +67,11 @@ class UserSetsPanel(FeaturePanel):
                                               qs.value("settings_dir", ""), "Camera settings (*.json)")
         if not path:
             return
-        n = settings_io.save(self.controller, path)
+        try:
+            n = settings_io.save(self.controller, path)
+        except (OSError, CameraError) as exc:
+            QMessageBox.critical(self, "Could not save settings", str(exc))
+            return
         qs.setValue("settings_dir", path)
         self.controller.message.emit(f"Saved {n} settings to {path}")
 

@@ -295,7 +295,11 @@ class MainWindow(QMainWindow):
         box.addButton(QMessageBox.StandardButton.Close)
         box.exec()
         if box.clickedButton() is open_b:
-            self.snapshot_dir().mkdir(parents=True, exist_ok=True)
+            try:
+                self.snapshot_dir().mkdir(parents=True, exist_ok=True)
+            except OSError as exc:  # e.g. a USB drive that is no longer plugged in
+                QMessageBox.critical(self, "Could not open snapshot folder", str(exc))
+                return
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.snapshot_dir())))
         elif box.clickedButton() is change_b:
             folder = QFileDialog.getExistingDirectory(self, "Snapshot folder", str(self.snapshot_dir()))
