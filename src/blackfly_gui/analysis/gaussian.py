@@ -81,13 +81,16 @@ def _block_mean(img: np.ndarray, f: int) -> tuple[np.ndarray, np.ndarray, np.nda
 
 
 def moments_guess(img: np.ndarray, xs: np.ndarray, ys: np.ndarray) -> tuple[float, ...] | None:
-    """Initial parameters from thresholded image moments."""
-    bg = float(np.percentile(img, 10))
-    peak = float(img.max())
+    """Initial parameters from thresholded image moments. NaN pixels (e.g.
+    from dividing by a reference that is zero there) are ignored."""
+    if not np.isfinite(img).any():
+        return None
+    bg = float(np.nanpercentile(img, 10))
+    peak = float(np.nanmax(img))
     if not math.isfinite(peak) or peak <= bg:
         return None
     w = img - bg
-    w[w < 0.2 * (peak - bg)] = 0.0
+    w[~(w >= 0.2 * (peak - bg))] = 0.0  # also zeroes NaN
     total = float(w.sum())
     if total <= 0:
         return None

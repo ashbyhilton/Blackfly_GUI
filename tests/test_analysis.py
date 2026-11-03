@@ -48,6 +48,18 @@ def test_projected_widths_and_fwhm():
     assert FWHM_PER_SIGMA == pytest.approx(2.35482, rel=1e-5)
 
 
+@pytest.mark.parametrize("shape", [(120, 160), (1536, 2048)])
+def test_fit_ignores_nan_pixels(shape):
+    # Divide-by-reference / flat-field leave NaN where the reference is ~0.
+    img = synth(shape, 1000, 70.3, 55.8, 12.0, 6.0, 25.0, 50, noise=5)
+    img[0, 0] = img[60, 100] = np.nan
+    r = fit_gaussian_2d(img)
+    assert r.success, r.message
+    assert r.x0 == pytest.approx(70.3, abs=0.1)
+    assert r.sigma_major == pytest.approx(12.0, rel=0.02)
+    assert not fit_gaussian_2d(np.full((50, 50), np.nan)).success
+
+
 def test_fit_flat_image_fails_cleanly():
     r = fit_gaussian_2d(np.full((50, 50), 7.0))
     assert not r.success
