@@ -392,9 +392,14 @@ class ReferenceTab(QWidget):
         path, _ = QFileDialog.getSaveFileName(self, "Save reference image",
                                               str(Path(qs.value("ref_dir", "")) / f"{target}.tif"),
                                               "TIFF (*.tif *.tiff)")
-        if path:
+        if not path:
+            return
+        try:
             self.manager.save(target, path)
-            qs.setValue("ref_dir", str(Path(path).parent))
+        except OSError as exc:
+            QMessageBox.critical(self, "Could not save image", str(exc))
+            return
+        qs.setValue("ref_dir", str(Path(path).parent))
 
     def _load(self, target: str) -> None:
         qs = QSettings()
