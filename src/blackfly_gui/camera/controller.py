@@ -155,6 +155,9 @@ class CameraController(QObject):
         self.features_changed.emit()
 
     def stop(self) -> None:
+        # A single-frame request still waiting for its frame is cancelled;
+        # otherwise the next Start would stop again after one frame.
+        self._single_shot = False
         if self._thread is None:
             return
         thread, self._thread = self._thread, None
@@ -173,12 +176,14 @@ class CameraController(QObject):
     def paused(self) -> Iterator[None]:
         """Temporarily stop streaming (e.g. to change ROI) and resume after."""
         was_streaming = self.is_streaming
+        single_shot = self._single_shot  # still wanted after the pause
         if was_streaming:
             self.stop()
         try:
             yield
         finally:
             if was_streaming:
+                self._single_shot = single_shot
                 self.start()
 
     def snap(self) -> None:

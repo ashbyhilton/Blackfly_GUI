@@ -68,6 +68,29 @@ def test_errors_reported_not_raised(ctrl, qtbot):
     assert "Width" in blocker.args[0]
 
 
+def test_cancelled_single_frame_does_not_stop_next_start(ctrl, qtbot):
+    ctrl.set("TriggerSource", "Line0")
+    ctrl.set("TriggerMode", "On")  # external trigger that never arrives
+    ctrl.snap()
+    ctrl.stop()  # user gives up waiting
+    ctrl.set("TriggerMode", "Off")
+    ctrl.start()
+    for _ in range(3):
+        with qtbot.waitSignal(ctrl.frame_ready, timeout=3000):
+            pass
+    qtbot.wait(100)  # a wrongly armed single shot stops via a 0 ms timer
+    assert ctrl.is_streaming
+
+
+def test_single_frame_survives_pause(ctrl, qtbot):
+    ctrl.set("TriggerSource", "Line0")
+    ctrl.set("TriggerMode", "On")
+    ctrl.snap()
+    with ctrl.paused():  # e.g. an ROI change while waiting for the trigger
+        pass
+    assert ctrl.is_streaming and ctrl._single_shot
+
+
 def test_immediate_start_stop_does_not_leave_thread_spinning(ctrl):
     # Regression: a stop requested before the thread was scheduled used to be
     # overwritten, leaving the thread busy-looping on a stopped camera.
