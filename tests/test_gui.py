@@ -236,3 +236,53 @@ def test_spin_box_edit_survives_refresh(win, monkeypatch):
     exp.spin.lineEdit().setText("123 us")
     win.acquisition_panel.refresh()  # the 1 s poll
     assert exp.spin.lineEdit().text() == "123 us"
+
+
+def test_projection_tab(win, qtbot):
+    pt = win.projection_tab
+    win.analysis.setCurrentWidget(pt)
+    pt.enable.setChecked(True)
+    qtbot.waitUntil(lambda: pt.fits is not None and all(f.success for f in pt.fits), timeout=3000)
+    # Simulator spot: sigma 60 x 35 px at 25 degrees -> sigma_x ~ 56.5 px.
+    assert pt.fits[0].sigma == pytest.approx(56.5, rel=0.05)
+    assert pt.table.item(1, 1).text() == f"{pt.fits[0].sigma * 3.45:.2f}"
+
+
+def test_alignment_reference_survives_roi_change_and_restart(win, qtbot):
+    at = win.alignment_tab
+    at.track.setChecked(True)
+    qtbot.waitUntil(lambda: at.current is not None, timeout=3000)
+    at._set_reference((1000.0, 700.0))
+    assert at.ref_marker.data.size == 2
+    x, y = at.ref_marker.data["x"][0], at.ref_marker.data["y"][0]
+    assert (x, y) == (pytest.approx(1000.0), pytest.approx(700.0))
+    # Crop the camera: the marker must stay on the same sensor position.
+    win.controller.set_roi(512, 256, 1024, 1024)
+    qtbot.waitUntil(lambda: at._geom is not None and at._geom.offset_x == 512
+                    and at.ref_marker.data.size == 2, timeout=3000)
+    assert at.ref_marker.data["x"][0] == pytest.approx(1000.0 - 512)
+    assert "Δx" in at.readout.text()
+    win.close()
+
+    w2 = MainWindow(simulate=True)
+    qtbot.addWidget(w2)
+    assert w2.alignment_tab.reference == (pytest.approx(1000.0), pytest.approx(700.0))
+    w2.close()
+
+
+def test_running_average_reduces_noise(win, qtbot, tmp_path):
+    import json
+
+    import numpy as np
+    win.image_view.average.setValue(16)
+    qtbot.waitUntil(lambda: win.averager._count >= 16, timeout=5000)
+    corner = (slice(0, 200), slice(0, 200))  # background, far from the orbiting spot
+    averaged = win.image_view.image[corner]
+    raw = win.controller.last_frame.image[corner].astype(float)
+    assert averaged.dtype == np.float32
+    assert averaged.std() < 0.5 * raw.std()
+    win.settings.setValue("snapshot_dir", str(tmp_path / "snaps"))
+    files = win.save_snapshot()  # raw TIFF + averaged TIFF + JSON
+    assert len(files) == 3 and "running average" in json.loads(files[-1].read_text())["correction"]
+    win.image_view.average.setValue(1)
+    qtbot.waitUntil(lambda: win.image_view.image.dtype == np.uint8, timeout=3000)
