@@ -229,6 +229,28 @@ def test_gaussian_refits_when_roi_moves_while_stopped(win, qtbot):
                     timeout=8000)
 
 
+def test_closed_panels_can_be_reopened_after_restart(win, qtbot):
+    docks = {d.windowTitle(): d for d in win._docks}
+    docks["Acquisition"].close()
+    docks["Analysis"].close()
+    assert docks["Acquisition"].isHidden() and docks["Analysis"].isHidden()
+    win.close()  # saves the layout with both panels closed
+
+    w2 = MainWindow()
+    qtbot.addWidget(w2)
+    w2.show()
+    docks = {d.windowTitle(): d for d in w2._docks}
+    assert docks["Acquisition"].isHidden()  # restored as closed ...
+    menu = {a.text(): a for a in w2.panels_menu.actions()}
+    assert set(docks) <= set(menu)  # ... but listed under Panels
+    menu["Acquisition"].trigger()
+    assert not docks["Acquisition"].isHidden()
+    menu["Reset layout"].trigger()
+    assert not any(d.isHidden() or d.isFloating() for d in docks.values())
+    assert w2.toolbar.isVisible()
+    w2.close()
+
+
 def test_spin_box_edit_survives_refresh(win, monkeypatch):
     exp = find(win.acquisition_panel, "ExposureTime")
     win.acquisition_panel.refresh()

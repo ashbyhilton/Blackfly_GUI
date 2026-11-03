@@ -13,9 +13,11 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QScrollArea,
     QToolBar,
+    QToolButton,
     QWidget,
 )
 
@@ -47,6 +49,8 @@ HELP_HTML = """<h3>Blackfly GUI {version}</h3>
 <p>Greyed-out controls show <i>why</i> in their tooltip. Most "locked" camera features are
 handled automatically (auto modes switched off, acquisition paused briefly for ROI/binning).</p>
 <p>Snapshots: raw camera data as lossless TIFF plus a JSON file with every camera setting.</p>
+<p>Closed a panel? Bring it back from <b>Panels</b> in the toolbar; <i>Reset layout</i>
+restores the original arrangement.</p>
 """
 
 
@@ -67,6 +71,7 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_statusbar()
         self._build_panels()
+        self._default_state = self.saveState()
         self._restore_layout()
 
         c = self.controller
@@ -96,6 +101,9 @@ class MainWindow(QMainWindow):
         tb = QToolBar("Camera")
         tb.setObjectName("camera_toolbar")
         tb.setMovable(False)
+        # Hidden toolbar = no way back to Connect/Panels; keep it out of the
+        # right-click menu.
+        tb.toggleViewAction().setVisible(False)
         self.addToolBar(tb)
 
         self.device_combo = QComboBox()
@@ -139,6 +147,15 @@ class MainWindow(QMainWindow):
         act_folder.triggered.connect(self._snapshot_folder_menu)
         tb.addAction(act_folder)
         tb.addSeparator()
+        # Filled by add_dock(): one show/hide entry per panel, so a closed
+        # panel can always be reopened.
+        self.panels_menu = QMenu("Panels", self)
+        panels_btn = QToolButton()
+        panels_btn.setText("Panels")
+        panels_btn.setToolTip("Show / hide panels, or reset the layout")
+        panels_btn.setMenu(self.panels_menu)
+        panels_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        tb.addWidget(panels_btn)
         act_help = QAction("Help", self)
         act_help.setShortcut(QKeySequence("F1"))
         act_help.triggered.connect(self._show_help)
@@ -174,6 +191,11 @@ class MainWindow(QMainWindow):
         self.analysis.add_analysis_tab(self.reference_tab, "Reference")
         self.analysis_dock = self.add_dock("Analysis", self.analysis, Qt.DockWidgetArea.BottomDockWidgetArea)
         self.resizeDocks([self.analysis_dock], [260], Qt.Orientation.Vertical)
+        self.panels_menu.addSeparator()
+        act_reset = QAction("Reset layout", self)
+        act_reset.setToolTip("Show all panels in their original places")
+        act_reset.triggered.connect(self.reset_layout)
+        self.panels_menu.addAction(act_reset)
         QShortcut(QKeySequence("T"), self, activated=self._software_trigger)
 
     def _software_trigger(self) -> None:
@@ -191,6 +213,7 @@ class MainWindow(QMainWindow):
         if tabify_with is not None:
             self.tabifyDockWidget(tabify_with, dock)
         self._docks.append(dock)
+        self.panels_menu.addAction(dock.toggleViewAction())
         return dock
 
     # ----------------------------------------------------------- devices
@@ -313,6 +336,15 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geom)
         if state is not None:
             self.restoreState(state)
+        # Older versions let the toolbar be hidden, and saved that state.
+        self.toolbar.setVisible(True)
+
+    def reset_layout(self) -> None:
+        """Show every panel in its original place (also rescues panels floated
+        onto a monitor that is no longer connected)."""
+        self.restoreState(self._default_state)
+        self._docks[0].raise_()
+        self.resizeDocks([self.analysis_dock], [260], Qt.Orientation.Vertical)
 
     def _on_opened(self, dev: DeviceInfo) -> None:
         self.setWindowTitle(f"Blackfly GUI {__version__} - {dev.label}")
