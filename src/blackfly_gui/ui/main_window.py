@@ -8,6 +8,8 @@ from typing import Callable
 from PySide6.QtCore import QSettings, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractButton,
+    QCheckBox,
     QComboBox,
     QDockWidget,
     QFileDialog,
@@ -32,6 +34,7 @@ from .panels.features import FeaturesPanel
 from .panels.format import FormatPanel
 from .panels.trigger import TriggerPanel
 from .panels.usersets import UserSetsPanel
+from .updates import UpdateChecker
 
 
 HELP_HTML = """<h3>Blackfly GUI {version}</h3>
@@ -79,6 +82,7 @@ class MainWindow(QMainWindow):
         self._stats_timer = QTimer(self)
         self._stats_timer.timeout.connect(self._update_stats)
         self._stats_timer.start(500)
+        self.updates = UpdateChecker(self)  # main() starts the start-up check
 
         self._update_actions()
         self.refresh_devices()
@@ -303,7 +307,23 @@ class MainWindow(QMainWindow):
                 self.settings.setValue("snapshot_dir", folder)
 
     def _show_help(self) -> None:
-        QMessageBox.about(self, "Blackfly GUI", HELP_HTML.format(version=__version__))
+        box, check_now = self.help_box()
+        box.exec()
+        if box.clickedButton() is check_now:
+            self.updates.check(manual=True)
+
+    def help_box(self) -> tuple[QMessageBox, QAbstractButton]:
+        box = QMessageBox(QMessageBox.Icon.NoIcon, "Blackfly GUI",
+                          HELP_HTML.format(version=__version__), parent=self)
+        box.setTextFormat(Qt.TextFormat.RichText)
+        check_now = box.addButton("Check for updates…", QMessageBox.ButtonRole.ActionRole)
+        box.setDefaultButton(box.addButton(QMessageBox.StandardButton.Close))  # Enter closes
+        # Parent it to the box: an unparented one is deleted with this Python variable.
+        auto = QCheckBox("Check for updates when the app starts", box)
+        auto.setChecked(self.updates.check_at_startup)
+        auto.toggled.connect(self.updates.set_check_at_startup)
+        box.setCheckBox(auto)
+        return box, check_now
 
     # -------------------------------------------------------------- layout
     def _restore_layout(self) -> None:

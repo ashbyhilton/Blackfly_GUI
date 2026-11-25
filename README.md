@@ -52,6 +52,11 @@ SpinView for lab and teaching use, and developed against a
 
 Only one program can use a camera at a time – close SpinView first.
 
+**New versions**: when one is released, *Update available* appears in the
+status bar – click it to see what changed and download it. Unzip it and run
+the new `BlackflyGUI.exe`; your settings carry over. Help (**F1**) has
+*Check for updates…* and a box to turn the start-up check off.
+
 ## Using it
 
 | Area | What it does |
@@ -123,6 +128,20 @@ This produces `dist\BlackflyGUI\BlackflyGUI.exe` and a zip to share. PySpin
 is bundled automatically when installed in the venv (the build log says
 *Bundling PySpin*); otherwise the build only offers the simulated camera.
 
+### Making a release
+
+The in-app update check reads the latest release on GitHub, so:
+
+1. Bump `__version__` in `src/blackfly_gui/__init__.py` – the only place the
+   version is written (`pyproject.toml` reads it from there).
+2. Build with `tools\build_exe.ps1` – it names the zip
+   `BlackflyGUI-<version>-win64.zip`.
+3. On GitHub: *Releases → Draft a new release*, tag `v<version>` (e.g.
+   `v0.2.0`), attach the zip and describe what changed – users see these
+   notes in the app.
+4. Publish. Running copies show *Update available* at their next start.
+   Tick *Set as a pre-release* to share a test build without announcing it.
+
 ### Project layout
 
 ```
@@ -134,6 +153,7 @@ src/blackfly_gui/
   analysis/              statistics, Gaussian fit, reference correction
   ui/                    main window, image view, panels, analysis dock
   settings_io.py         settings files;  snapshot.py  TIFF + JSON snapshots
+  updates.py             update check against GitHub Releases
 tests/                   pytest suite (runs against the simulator)
 tools/                   check_camera.py, build_exe.ps1
 blackfly_gui.spec        PyInstaller spec

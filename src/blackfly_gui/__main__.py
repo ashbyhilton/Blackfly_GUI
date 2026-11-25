@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
 
     window = MainWindow(simulate=args.simulate, serial=args.serial)
     window.show()
+    window.updates.check_soon()
     return app.exec()
 
 
